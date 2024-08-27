@@ -1,0 +1,45 @@
+library(dplyr)
+
+data <- read.csv("data_tp1.csv")
+
+# Filtra los datos para Argentina y Malasia, excluyendo el total. Además filtra los códigos con 3 dígitos
+arg_mys <- data %>%
+  filter(ReporterISO3 == "ARG", PartnerISO3 == "MYS", ProductCode != "Total", nchar(ProductCode) == 3)
+
+# Separa las exportaciones e importaciones (exportaciones de Malasia)
+expo_data <- arg_mys %>% filter(TradeFlowName == "Export")
+impo_data <- arg_mys %>% filter(TradeFlowName == "Import")
+
+# Agrupa por año y código de producto y luego calcula el total de expo e impo por año
+expo_agrup <- expo_data %>%
+  group_by(Year, ProductCode) %>%
+  summarise(TradeValue = sum(TradeValue.in.1000.USD))
+
+impo_agrup <- impo_data %>%
+  group_by(Year, ProductCode) %>%
+  summarise(TradeValue = sum(TradeValue.in.1000.USD))
+
+total_expo <- expo_agrup %>%
+  group_by(Year) %>%
+  summarise(TotalExportValue = sum(TradeValue))
+
+total_impo <- impo_agrup %>%
+  group_by(Year) %>%
+  summarise(TotalImportValue = sum(TradeValue))
+
+expo_agrup <- merge(expo_agrup, total_expo, by = "Year")
+impo_agrup <- merge(impo_agrup, total_impo, by = "Year")
+
+# Calcula el IVCRN para cada producto en cada año
+expo_agrup <- expo_agrup %>%
+  left_join(impo_agrup, by = c("Year", "ProductCode")) %>%
+  mutate(IVCRN = (TradeValue.x / TotalExportValue) / (TradeValue.y / TotalImportValue),
+         IVCRN_normalized = (IVCRN - 1) / (IVCRN + 1))
+
+# Sectores con mayor IVCRN normalizado
+sectores_top <- expo_agrup %>%
+  group_by(Year) %>%
+  top_n(5, wt = IVCRN_normalized) %>%
+  arrange(Year, desc(IVCRN_normalized))
+
+print(sectores_top)
