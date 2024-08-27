@@ -36,8 +36,9 @@ expo_agrup <- expo_agrup %>%
   mutate(IVCRN = (TradeValue.x / TotalExportValue) / (TradeValue.y / TotalImportValue),
          IVCRN_normalized = (IVCRN - 1) / (IVCRN + 1))
 
-# Sectores con mayor IVCRN normalizado
+# Sectores con mayor IVCRN normalizado (de signo positivo)
 sectores_top <- expo_agrup %>%
+  filter(IVCRN_normalized > 0) %>%  
   group_by(Year) %>%
   top_n(5, wt = IVCRN_normalized) %>%
   arrange(Year, desc(IVCRN_normalized))
