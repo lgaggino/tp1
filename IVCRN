@@ -12,22 +12,21 @@ totales <- data_tp %>%
 
 data_totales <- merge(data_tp, totales, by = c("Year", "ReporterName"))
 
-# Calcula el porcentaje del v.c.
+# Calcula la prop del v.c.
 data_totales <- data_totales %>%
-  mutate(porcentaje = (`TradeValue in 1000 USD` / Total_TradeValue) * 100)
+  mutate(prop = (`TradeValue in 1000 USD` / Total_TradeValue))
 
-# Calcula total mundial
-totales_mundiales <- data_totales %>%
-  group_by(Year, ProductCode) %>%
-  summarise(global = sum(`TradeValue in 1000 USD`, na.rm = TRUE)) %>%
-  mutate(prop = (global / sum(global)) * 100) %>%
-  ungroup()
+# Calcula proporción global
+prop_all_countries <- data_totales %>%
+  filter(ReporterName == "All countries  All --- All") %>%
+  select(Year, ProductCode, prop) %>%
+  rename(prop_1 = prop)
 
-data_final <- merge(data_totales, totales_mundiales, by = c("Year", "ProductCode"))
+data_final <- merge(data_totales, prop_all_countries, by = c("Year", "ProductCode"), all.x = TRUE)
 
-# Calcular RCA y RCA Normalizado
+# Calcula RCA y RCA Normalizado
 data_final <- data_final %>%
-  mutate(RCA = porcentaje / prop)
+  mutate(RCA = prop / prop_1)
 
 data_final <- data_final %>%
   mutate(RCA_Normalizado = (RCA - 1) / (RCA + 1))
@@ -42,9 +41,14 @@ productos_con_ventaja <- data_final %>%
   pivot_wider(names_from = ReporterName, values_from = RCA_Normalizado) %>%
   filter(Argentina > Malaysia & Argentina > 0) %>%
   select(Year, ProductCode, Argentina, Malaysia)
-
+write.xlsx(productos_con_ventaja, "productos_con_ventaja.xlsx")
 top_5_productos <- productos_con_ventaja %>%
   group_by(Year) %>%
   arrange(desc(Argentina)) %>%
   slice_max(order_by = Argentina, n = 5, with_ties = FALSE) %>%
   ungroup()
+
+print(top_5_productos)
+
+#crear una tabla con top 5 productos
+write.xlsx(top_5_productos, "top_5_productos.xlsx")
