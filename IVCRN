@@ -1,46 +1,50 @@
+library(readxl)
 library(dplyr)
+library(tidyr)
 
-data <- read.csv("data_tp1.csv")
+data_tp <- read_excel("data_tp1.xlsx")
 
-# Filtra los datos para Argentina y Malasia, excluyendo el total. Además filtra los códigos con 3 dígitos
-arg_mys <- data %>%
-  filter(ReporterISO3 == "ARG", PartnerISO3 == "MYS", ProductCode != "Total", nchar(ProductCode) == 3)
+# Calcula totales anuales x país
+totales <- data_tp %>%
+  group_by(Year, ReporterName) %>%
+  summarise(Total_TradeValue = sum(`TradeValue in 1000 USD`, na.rm = TRUE)) %>%
+  ungroup()
 
-# Separa las exportaciones e importaciones (exportaciones de Malasia)
-expo_data <- arg_mys %>% filter(TradeFlowName == "Export")
-impo_data <- arg_mys %>% filter(TradeFlowName == "Import")
+data_totales <- merge(data_tp, totales, by = c("Year", "ReporterName"))
 
-# Agrupa por año y código de producto y luego calcula el total de expo e impo por año
-expo_agrup <- expo_data %>%
+# Calcula el porcentaje del v.c.
+data_totales <- data_totales %>%
+  mutate(porcentaje = (`TradeValue in 1000 USD` / Total_TradeValue) * 100)
+
+# Calcula total mundial
+totales_mundiales <- data_totales %>%
   group_by(Year, ProductCode) %>%
-  summarise(TradeValue = sum(TradeValue.in.1000.USD))
+  summarise(global = sum(`TradeValue in 1000 USD`, na.rm = TRUE)) %>%
+  mutate(prop = (global / sum(global)) * 100) %>%
+  ungroup()
 
-impo_agrup <- impo_data %>%
-  group_by(Year, ProductCode) %>%
-  summarise(TradeValue = sum(TradeValue.in.1000.USD))
+data_final <- merge(data_totales, totales_mundiales, by = c("Year", "ProductCode"))
 
-total_expo <- expo_agrup %>%
+# Calcular RCA y RCA Normalizado
+data_final <- data_final %>%
+  mutate(RCA = porcentaje / prop)
+
+data_final <- data_final %>%
+  mutate(RCA_Normalizado = (RCA - 1) / (RCA + 1))
+
+# Ordenar datos y obtener top5
+data_final <- data_final %>%
+  group_by(Year, ProductCode, ReporterName) %>%
+  summarise(RCA_Normalizado = mean(RCA_Normalizado, na.rm = TRUE), .groups = "drop")
+
+productos_con_ventaja <- data_final %>%
+  filter(ReporterName %in% c("Argentina", "Malaysia")) %>%
+  pivot_wider(names_from = ReporterName, values_from = RCA_Normalizado) %>%
+  filter(Argentina > Malaysia & Argentina > 0) %>%
+  select(Year, ProductCode, Argentina, Malaysia)
+
+top_5_productos <- productos_con_ventaja %>%
   group_by(Year) %>%
-  summarise(TotalExportValue = sum(TradeValue))
-
-total_impo <- impo_agrup %>%
-  group_by(Year) %>%
-  summarise(TotalImportValue = sum(TradeValue))
-
-expo_agrup <- merge(expo_agrup, total_expo, by = "Year")
-impo_agrup <- merge(impo_agrup, total_impo, by = "Year")
-
-# Calcula el IVCRN para cada producto en cada año
-expo_agrup <- expo_agrup %>%
-  left_join(impo_agrup, by = c("Year", "ProductCode")) %>%
-  mutate(IVCRN = (TradeValue.x / TotalExportValue) / (TradeValue.y / TotalImportValue),
-         IVCRN_normalized = (IVCRN - 1) / (IVCRN + 1))
-
-# Sectores con mayor IVCRN normalizado (de signo positivo)
-sectores_top <- expo_agrup %>%
-  filter(IVCRN_normalized > 0) %>%  
-  group_by(Year) %>%
-  top_n(5, wt = IVCRN_normalized) %>%
-  arrange(Year, desc(IVCRN_normalized))
-
-print(sectores_top)
+  arrange(desc(Argentina)) %>%
+  slice_max(order_by = Argentina, n = 5, with_ties = FALSE) %>%
+  ungroup()
